@@ -104,4 +104,4 @@ capture_toolchain_diagnostics() {
 
 # --- Run --------------------------------------------------------------------
 source "$LIB_DIR/measure.sh"
-demo_main
+demo_main "$@"

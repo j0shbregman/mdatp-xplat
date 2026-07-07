@@ -347,6 +347,19 @@ const excludedNoteLine = cfg.excludedNote
     ? `\n${cfg.excludedNote}\n`
     : '';
 
+const diagnosticsPath = path.join(runDir, 'diagnostics.txt');
+const envDiagnosticsSection = fs.existsSync(diagnosticsPath)
+    ? `
+### Environment Diagnostics
+
+${cfg.envIntro}
+
+\`\`\`
+${stripAnsiCodes(fs.readFileSync(diagnosticsPath, 'utf-8')).trim()}
+\`\`\`
+`
+    : '';
+
 // Generate markdown report
 const report = `# ${cfg.title}
 
@@ -413,28 +426,7 @@ ${fs.readdirSync(runDir)
     .filter(f => f.endsWith('.txt'))
     .map(f => `- \`${f}\``)
     .join('\n')}
-
-### Environment Diagnostics
-
-${cfg.envIntro}
-
-\`\`\`
-${(() => {
-    try {
-        return stripAnsiCodes(fs.readFileSync(path.join(runDir, 'diagnostics.txt'), 'utf-8')).trim();
-    } catch (e) {
-        return '(diagnostics.txt not found — re-run with the latest run-demo.sh)';
-    }
-})()}
-\`\`\`
-
----
-
-## Conclusion
-
-Performance profiles are the recommended approach for optimizing MDE in development environments. They provide measurable performance improvements without sacrificing security, making them the clear winner over folder exclusions.
-
-**Key Metric:** Profiles achieved threat detection (EICAR found) while maintaining optimized scanning, proving they don't create the protection gaps that exclusions do.
+${envDiagnosticsSection}
 `;
 
 const reportPath = path.join(runDir, 'REPORT.md');

@@ -237,13 +237,27 @@ function formatLiveHotEvents(fileName) {
         sourceRows = dataRows(lines);
     }
 
-    const block = (label, rows, empty) =>
-        `**${label}**\n\`\`\`\n${rows.length ? rows.join('\n') : empty}\n\`\`\``;
+    const table = (rows, empty) => {
+        if (!rows.length) return empty;
+        const parsed = rows.map((row) => {
+            const parts = row.trim().split(/\s{2,}/);
+            return {
+                count: parts[0] || '',
+                process: parts[1] || '',
+                location: parts.slice(2).join('  ') || '',
+            };
+        });
+        const out = ['| Count | Process | Location |', '|---|---|---|'];
+        for (const row of parsed) {
+            out.push(`| ${row.count} | ${row.process} | ${row.location} |`);
+        }
+        return out.join('\n');
+    };
 
     const parts = [];
     if (summary) parts.push(`\`${summary}\``);
-    parts.push(block('Sources (processes driving scans)', sourceRows,
-        '(no hot-event sources captured during the build window)'));
+    parts.push(`**Sources (processes driving scans)**\n${table(sourceRows,
+        '(no hot-event sources captured during the build window)')}`);
     return '\n' + parts.join('\n\n');
 }
 
@@ -423,6 +437,21 @@ const profilesPhase = extractPhaseMetrics(profilesAfterPath);
 // Which profiles were actually active in Phase 3 (authoritative, from the snapshot).
 const appliedProfiles = extractAppliedProfiles(profilesAfterPath);
 
+const diagnosticsPath = path.join(runDir, 'diagnostics.txt');
+const envDiagnosticsSection = fs.existsSync(diagnosticsPath)
+    ? `
+### Environment Diagnostics
+
+Machine-specific facts captured at run time (useful when this report was produced on
+a different machine — e.g. to confirm which node ran the build and whether the \`node\`
+performance profile could actually match it):
+
+\`\`\`
+${stripAnsiCodes(fs.readFileSync(diagnosticsPath, 'utf-8')).trim()}
+\`\`\`
+`
+    : '';
+
 // Generate markdown report
 const report = `# MDE Performance Profile Demo Report
 
@@ -487,30 +516,7 @@ ${fs.readdirSync(runDir)
     .filter(f => f.endsWith('.txt'))
     .map(f => `- \`${f}\``)
     .join('\n')}
-
-### Environment Diagnostics
-
-Machine-specific facts captured at run time (useful when this report was produced on
-a different machine — e.g. to confirm which node ran the build and whether the \`node\`
-performance profile could actually match it):
-
-\`\`\`
-${(() => {
-    try {
-        return stripAnsiCodes(fs.readFileSync(path.join(runDir, 'diagnostics.txt'), 'utf-8')).trim();
-    } catch (e) {
-        return '(diagnostics.txt not found — re-run with the latest run-demo.sh)';
-    }
-})()}
-\`\`\`
-
----
-
-## Conclusion
-
-Performance profiles are the recommended approach for optimizing MDE in development environments. They provide measurable performance improvements without sacrificing security, making them the clear winner over folder exclusions.
-
-**Key Metric:** Profiles achieved threat detection (EICAR found) while maintaining optimized scanning, proving they don't create the protection gaps that exclusions do.
+${envDiagnosticsSection}
 `;
 
 // Write report

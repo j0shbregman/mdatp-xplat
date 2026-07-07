@@ -50,6 +50,13 @@ print_error()   { echo -e "${RED}✗ $1${NC}"; }
 print_warning() { echo -e "${RED}⚠ $1${NC}"; }
 print_info()    { echo -e "${YELLOW}ℹ $1${NC}"; }
 
+diagnostics_enabled() {
+    case "${MDE_CAPTURE_DIAGNOSTICS:-0}" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # --- Accurate measurement helpers -------------------------------------------
 
 # Sum of "totalFilesScanned" across every process, from MDE real-time protection
@@ -534,7 +541,12 @@ check_prerequisites() {
         print_info "  build from within the IDE instead."
     fi
 
-    capture_environment_diagnostics
+    if diagnostics_enabled; then
+        capture_environment_diagnostics
+    else
+        print_info "Skipping environment diagnostics (off by default)."
+        print_info "  Use --diagnostics or MDE_CAPTURE_DIAGNOSTICS=1 to capture diagnostics.txt"
+    fi
 }
 
 # --- Phases -----------------------------------------------------------------
@@ -641,6 +653,30 @@ EOF
 
 # --- Entry point ------------------------------------------------------------
 demo_main() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --diagnostics)
+                export MDE_CAPTURE_DIAGNOSTICS=1
+                ;;
+            --no-diagnostics)
+                export MDE_CAPTURE_DIAGNOSTICS=0
+                ;;
+            -h|--help)
+                echo "Usage: $(basename "$0") [--diagnostics]"
+                echo ""
+                echo "  --diagnostics     Capture environment diagnostics into diagnostics.txt"
+                echo "  --no-diagnostics  Explicitly disable diagnostics capture (default)"
+                return 0
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Usage: $(basename "$0") [--diagnostics]"
+                return 2
+                ;;
+        esac
+        shift
+    done
+
     # Per-run diagnostic logs + report.
     RUN_DIR="${RUN_DIR:-$PROJECT_DIR/run-logs/$(date +%Y%m%d_%H%M%S)}"
     mkdir -p "$RUN_DIR"

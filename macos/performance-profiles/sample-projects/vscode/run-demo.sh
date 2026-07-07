@@ -47,6 +47,13 @@ print_info() {
     echo -e "${YELLOW}ℹ $1${NC}"
 }
 
+diagnostics_enabled() {
+    case "${MDE_CAPTURE_DIAGNOSTICS:-0}" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # --- Accurate measurement helpers -------------------------------------------
 
 # Sum of "totalFilesScanned" across every process, from MDE real-time protection
@@ -738,10 +745,13 @@ check_prerequisites() {
         print_warning "  MDE_ALLOW_NON_VSCODE=1 set — continuing outside VSCode."
     fi
 
-    # Capture machine-specific facts so a report produced on a lab machine is
-    # self-explaining (which node ran the build, its install layout, engine/tamper
-    # state, installed formulas).
-    capture_environment_diagnostics
+    # Capture machine-specific facts when explicitly enabled.
+    if diagnostics_enabled; then
+        capture_environment_diagnostics
+    else
+        print_info "Skipping environment diagnostics (off by default)."
+        print_info "  Use --diagnostics or MDE_CAPTURE_DIAGNOSTICS=1 to capture diagnostics.txt"
+    fi
 }
 
 # Phase 1: Baseline
@@ -868,6 +878,30 @@ generate_report() {
 
 # Main
 main() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --diagnostics)
+                export MDE_CAPTURE_DIAGNOSTICS=1
+                ;;
+            --no-diagnostics)
+                export MDE_CAPTURE_DIAGNOSTICS=0
+                ;;
+            -h|--help)
+                echo "Usage: $(basename "$0") [--diagnostics]"
+                echo ""
+                echo "  --diagnostics     Capture environment diagnostics into diagnostics.txt"
+                echo "  --no-diagnostics  Explicitly disable diagnostics capture (default)"
+                return 0
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Usage: $(basename "$0") [--diagnostics]"
+                return 2
+                ;;
+        esac
+        shift
+    done
+
     check_prerequisites
     
     # Cache sudo for the duration of the demo
@@ -896,4 +930,4 @@ main() {
 }
 
 # Run
-main
+main "$@"

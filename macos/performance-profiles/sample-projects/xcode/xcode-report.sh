@@ -15,6 +15,7 @@
 #   ./xcode-report.sh on       # inject pre/post-actions into the scheme
 #   ./xcode-report.sh off      # remove them
 #   ./xcode-report.sh status   # show whether they are installed
+#   ./xcode-report.sh on --debug  # inject actions with report debug output enabled
 
 set -euo pipefail
 
@@ -35,17 +36,31 @@ if [ ! -f "$SCHEME" ]; then
 fi
 
 action="${1:-status}"
+shift || true
+
+debug_flag=""
+for arg in "$@"; do
+    case "$arg" in
+        --debug)
+            debug_flag=" --debug"
+            ;;
+        --no-debug)
+            debug_flag=""
+            ;;
+    esac
+done
 
 case "$action" in
     on|enable|install)
         [ -x "$REPORT_SCRIPT" ] || chmod +x "$REPORT_SCRIPT" 2>/dev/null || true
-        REPORT_SCRIPT="$REPORT_SCRIPT" MARKER="$MARKER" /usr/bin/python3 - "$SCHEME" <<'PY'
+        REPORT_SCRIPT="$REPORT_SCRIPT" MARKER="$MARKER" DEBUG_FLAG="$debug_flag" /usr/bin/python3 - "$SCHEME" <<'PY'
 import sys, os
 import xml.etree.ElementTree as ET
 
 scheme = sys.argv[1]
 report = os.environ["REPORT_SCRIPT"]
 marker = os.environ["MARKER"]
+debug_flag = os.environ.get("DEBUG_FLAG", "")
 
 tree = ET.parse(scheme)
 root = tree.getroot()
@@ -56,10 +71,15 @@ if build is None:
 AT = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction"
 
 def make_actions(title, cmd):
-    ea = ET.Element("ExecutionAction", {"ActionType": AT})
+    ea = ET.Element("ExecutionAction", {
+        "ActionType": AT,
+        "showEnvVarsInLog": "0",
+    })
     ac = ET.SubElement(ea, "ActionContent", {
         "title": title,
-        "scriptText": f'/bin/bash "{report}" {cmd}\n',
+        "showEnvVarsInLog": "0",
+        "shouldShowEnvVarsInLog": "0",
+        "scriptText": f'/bin/bash "{report}" {cmd}{debug_flag}\n',
     })
     return ea
 
@@ -88,6 +108,9 @@ PY
         echo "  Scheme: $SCHEME"
         echo "  Open FluentUI.Demo.xcodeproj in Xcode, select the 'Demo.Development' scheme, and Build (Cmd+B)."
         echo "  The report prints in the build log (Report navigator) and as a notification."
+        if [ -n "$debug_flag" ]; then
+            echo "  Debug mode enabled: raw counter internals will be included in the report output."
+        fi
         echo "  Run './xcode-report.sh off' when you're done."
         ;;
     off|disable|remove|uninstall)
@@ -119,11 +142,16 @@ PY
     status)
         if grep -q "$MARKER" "$SCHEME" 2>/dev/null; then
             echo "● ENABLED in $SCHEME"
+            if grep -q -- "--debug" "$SCHEME" 2>/dev/null; then
+                echo "  debug: enabled"
+            else
+                echo "  debug: disabled"
+            fi
         else
             echo "○ disabled (not present in $SCHEME)"
         fi
         ;;
     *)
-        echo "Usage: $0 {on|off|status}"; exit 2
+        echo "Usage: $0 {on|off|status} [--debug]"; exit 2
         ;;
 esac
