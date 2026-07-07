@@ -28,6 +28,29 @@ if (!fs.existsSync(runDir)) {
     process.exit(1);
 }
 
+function openInVsCode(filePath) {
+    const candidates = [
+        'code',
+        '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+    ];
+
+    for (const candidate of candidates) {
+        try {
+            execSync(`"${candidate}" --reuse-window --goto "${filePath}"`, { stdio: 'ignore' });
+            return true;
+        } catch (e) {
+            // Try the next candidate.
+        }
+    }
+
+    try {
+        execSync(`open -a "Visual Studio Code" "${filePath}"`, { stdio: 'ignore' });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Load per-sample report configuration (optional).
 const cfg = (() => {
     const defaults = {
@@ -138,18 +161,6 @@ function extractMetrics(filePath) {
     }
 }
 
-function formatHotEventsTable(topEvents) {
-    if (!topEvents || topEvents.length === 0) {
-        return 'No hot events captured';
-    }
-    let table = '\n| Count | Process | Location |\n|-------|---------|----------|\n';
-    for (const event of topEvents) {
-        const p = event.path.length > 60 ? event.path.substring(0, 57) + '...' : event.path;
-        table += `| ${event.count} | ${event.process} | ${p} |\n`;
-    }
-    return table;
-}
-
 // Read the persisted EICAR probe result for a phase (written by measure.sh's
 // test_eicar) and render the ACTUAL detection outcome.
 function readEicarResult(fileName) {
@@ -200,27 +211,35 @@ function formatLiveHotEvents(fileName) {
     const dataRows = (arr) => arr.filter(l => /^\s*\d+\s/.test(l)).slice(0, 10);
 
     let sourceRows = [];
-    let targetRows = [];
     if (srcIdx >= 0) {
         const srcEnd = tgtIdx >= 0 ? tgtIdx : lines.length;
         sourceRows = dataRows(lines.slice(srcIdx + 1, srcEnd));
-    }
-    if (tgtIdx >= 0) {
-        targetRows = dataRows(lines.slice(tgtIdx + 1));
     }
     if (srcIdx < 0 && tgtIdx < 0) {
         sourceRows = dataRows(lines);
     }
 
-    const block = (label, rows, empty) =>
-        `**${label}**\n\`\`\`\n${rows.length ? rows.join('\n') : empty}\n\`\`\``;
+    const table = (rows, empty) => {
+        if (!rows.length) return empty;
+        const parsed = rows.map((row) => {
+            const parts = row.trim().split(/\s{2,}/);
+            return {
+                count: parts[0] || '',
+                process: parts[1] || '',
+                location: parts.slice(2).join('  ') || '',
+            };
+        });
+        const lines = ['| Count | Process | Location |', '|---|---|---|'];
+        for (const row of parsed) {
+            lines.push(`| ${row.count} | ${row.process} | ${row.location} |`);
+        }
+        return lines.join('\n');
+    };
 
     const parts = [];
     if (summary) parts.push(`\`${summary}\``);
-    parts.push(block('Sources (processes driving scans)', sourceRows,
-        '(no hot-event sources captured during the build window)'));
-    parts.push(block('Targets (files / paths scanned)', targetRows,
-        '(no hot-event targets captured during the build window)'));
+    parts.push(`**Sources (processes driving scans)**\n${table(sourceRows,
+        '(no hot-event sources captured during the build window)')}`);
     return '\n' + parts.join('\n\n');
 }
 
@@ -365,30 +384,21 @@ Profiles applied in Phase 3: ${appliedProfiles.length ? appliedProfiles.map(p =>
 
 ## Scan Activity by Phase
 
-Two views per phase: **Sources** (the processes that trigger scans) and **Targets**
-(the actual files/paths MDE scanned). Targets are the direct signal for whether an
-exclusion is being honored — an excluded path should stop appearing here.
+One view per phase: **Sources** (the processes that trigger scans). The report now
+omits the top-process summary and file/path target list to keep the output focused on
+the scan drivers themselves.
 
 ### Baseline
-
-Top processes scanned:
-${formatHotEventsTable(baselineMetrics.topEvents)}
 
 During the build (live capture):
 ${formatLiveHotEvents('baseline_(full_scanning)_hot_events.txt')}
 
 ### Exclusions
 
-Top processes scanned:
-${formatHotEventsTable(exclusionsMetrics.topEvents)}
-
 During the build (live capture):
 ${formatLiveHotEvents('with_exclusions_hot_events.txt')}
 
 ### Profiles
-
-Top processes scanned:
-${formatHotEventsTable(profilesMetrics.topEvents)}
 
 During the build (live capture):
 ${formatLiveHotEvents('with_performance_profiles_hot_events.txt')}
@@ -432,8 +442,11 @@ fs.writeFileSync(reportPath, report);
 console.log(`✓ Report generated: ${reportPath}`);
 
 try {
-    execSync(`open "${reportPath}"`, { stdio: 'ignore' });
-    console.log('✓ Opened report');
+    if (openInVsCode(reportPath)) {
+        console.log('✓ Opened report in VS Code');
+    } else {
+        console.log(`Report ready at: ${reportPath}`);
+    }
 } catch (e) {
     console.log(`Report ready at: ${reportPath}`);
 }
